@@ -1,0 +1,13 @@
+{application, epool, [
+    {id, "epool"},
+    {vsn, "0.9.0"},
+    {description, "Epool - Generic pooling library for Erlang"},
+    {modules, []},
+    {registered, []},
+    {applications, [kernel, stdlib, sasl]},
+    {mod, {epool_app, []}},
+    {env, []},
+    {maintainers, ["Madalin Grigore-Enescu <os@ergenius.com>"]},
+    {licenses, ["MIT"]},
+    {links, [{"Github", "https://github.com/ergenius/epool"}]}
+]}.
