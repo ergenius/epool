@@ -19,6 +19,8 @@
 -export([take_by_worker_pid/2]).
 -export([take_by_worker_monitor_ref/2]).
 
+-export([cull/5]).
+
 %% Type definition for idle workers list
 -type epool_idle_workers() :: [epool_idle_worker()].
 
@@ -145,4 +147,91 @@ delete_by_worker_pid(_WorkerPid, []) -> [].
 delete_by_worker_monitor_ref(WorkerMonitorRef, [#epool_idle_worker{worker_monitor_ref = WorkerMonitorRef} | T]) -> T;
 delete_by_worker_monitor_ref(WorkerMonitorRef, [H | T]) -> [H | delete_by_worker_monitor_ref(WorkerMonitorRef, T)];
 delete_by_worker_monitor_ref(_WorkerMonitorRef, []) -> [].
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% cull
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%% @doc Cull the idle workers using the specified culling parameters
+%% Please notice this method also MUST be responsible of demonitoring and terminating the worker.
+%% This way we can optimize culling with no need the caller to be aware of the idle workers implementation details
+%% and no need for temporary lists of workers that need culling to be returned to the caller. This is simply
+%% the fastest way we can do it.
+-spec cull(PoolName, CullingAge, Size, MinSize, IdleWorkers) -> none | {CulledCount, CulledIdleWorkers} when
+    PoolName                :: epool_name(),
+    CullingAge              :: non_neg_integer(),
+    Size                    :: non_neg_integer(),
+    MinSize                 :: non_neg_integer(),
+    IdleWorkers             :: epool_idle_workers(),
+    CulledCount             :: non_neg_integer(),
+    CulledIdleWorkers       :: epool_idle_workers().
+
+cull(PoolName, CullingAge, Size, MinSize, IdleWorkers) ->
+
+    %% Get current time once an use this time reference all around
+    CurrentTime = epool_utils:time_posix_seconds(),
+
+    %% Build workers supervisor id
+    IdSupWorkers = epool_utils:id_sup_workers(PoolName),
+
+    cull(IdSupWorkers, CullingAge, Size, MinSize, IdleWorkers, CurrentTime, 0, []).
+
+%% @doc Iterate and cull the idle workers using the specified culling parameters
+-spec cull(IdSupWorkers, CullingAge, Size, MinSize, IdleWorkers, CurrentTime, Counter, Acum) ->
+    none | {CulledCount, CulledIdleWorkers} when
+    IdSupWorkers            :: atom(),
+    CullingAge              :: non_neg_integer(),
+    Size                    :: non_neg_integer(),
+    MinSize                 :: non_neg_integer(),
+    IdleWorkers             :: epool_idle_workers(),
+    CurrentTime             :: non_neg_integer(),
+    Counter                 :: non_neg_integer(),
+    Acum                    :: epool_idle_workers(),
+    CulledCount             :: non_neg_integer(),
+    CulledIdleWorkers       :: epool_idle_workers().
+
+%% End iteration and returns culling result
+cull(_IdSupWorkers, _CullingAge, _Size, _MinSize, [], _CurrentTime, Counter, Acum) -> {Counter, Acum};
+
+%% Continue culling only when idle workers size is bigger than idle workers minimum size
+cull(IdSupWorkers, CullingAge, Size, MinSize,
+     [EpoolIdleWorker = #epool_idle_worker{
+         worker_monitor_ref = WorkerMonitorRef,
+         worker_idle_time   = WorkerIdleTime
+     } | T],
+     CurrentTime,
+     Counter,
+     Acum) when Size > MinSize ->
+
+    %% Check to see if we need to cull this worker
+    case (CurrentTime - WorkerIdleTime) > CullingAge of
+        true ->
+
+            %% Demonitor the worker
+            erlang:demonitor(WorkerMonitorRef),
+
+            %% Remove the worker from his supervisor
+
+
+            %% Iterate next
+            cull(IdSupWorkers, CullingAge, Size - 1, MinSize, T, CurrentTime, Counter + 1, Acum);
+
+        false ->
+
+            %% Don't cull this worker
+            cull(IdSupWorkers, CullingAge, Size, MinSize, T, CurrentTime, Counter, [EpoolIdleWorker | Acum])
+
+    end;
+
+%% Skip culling when idle workers size is not bigger than idle workers minimum size anymore
+cull(_IdSupWorkers, _CullingAge, _Size, _MinSize, T, _CurrentTime, Counter, Acum) -> cull_skip(T, Counter, Acum).
+
+%% @doc Skip culling remaining workers
+cull_skip([H|T], Counter, Acum) -> cull_skip(T, Counter, [H | Acum]);
+cull_skip([], Counter, Acum) -> {Counter, Acum}.
+
+
+
+
+
 

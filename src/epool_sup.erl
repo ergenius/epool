@@ -29,16 +29,22 @@ init(Args) ->
     RestartIntensity    = epool_utils:config_get_value(sup_restart_intensity, Args, ?EPOOL_DEFAULT_SUP_RESTART_INTENSITY),
     RestartPeriod       = epool_utils:config_get_value(sup_restart_period, Args, ?EPOOL_DEFAULT_SUP_RESTART_INTENSITY),
     PoolsConfig         = epool_utils:config_get_value(pools, Args, []),
-    GroupingModule      = epool_utils:config_get_value(grouping_module, Args, ?EPOOL_DEFAULT_GROUPING_MODULE),
+
+    SrvGroupingName     = epool_utils:config_get_value(srv_grouping_name, Args, ?EPOOL_DEFAULT_SRV_GROUPING_NAME),
+    SrvGroupingShutdown = epool_utils:config_get_value(srv_grouping_shutdown, Args, ?EPOOL_DEFAULT_SRV_GROUPING_SHUTDOWN),
 
     %% Iterate pools config list and build pools child specifications
-    PoolsSpecs   = [epool_utils:pool_config_to_child_specs(PoolConfig) || PoolConfig <- PoolsConfig],
+    PoolsChildSpecs     = [epool_utils:pool_config_to_child_specs(PoolConfig) || PoolConfig <- PoolsConfig],
 
-    %% Init default grouping module and add any grouping child to the supervisor children specifications
-    ChildSpecs = case GroupingModule:init() of
-                     {ok, GroupingModuleChildSpecs} -> [GroupingModuleChildSpecs | PoolsSpecs];
-                     ok -> PoolsSpecs
-                 end,
+    %% Add grouping child to the supervisor children specifications
+    ChildSpecs   = [{
+                        SrvGroupingName,
+                        {epool_srv_grouping, start_link, [Args]},
+                        permanent,
+                        SrvGroupingShutdown,
+                        worker,
+                        [epool_srv_grouping]
+                    } | PoolsChildSpecs],
 
     %% Returns supervisor flags and child specifications
     {ok, {{one_for_one, RestartIntensity, RestartPeriod}, ChildSpecs}}.

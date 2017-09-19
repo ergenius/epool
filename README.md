@@ -12,7 +12,7 @@ Epool is a **generic** pooling library for Erlang **insanely documented** with a
 | 1 | Keep a copy of all workers | dict (questionable) | No | No |
 | 2 | Idle workers storage | lists | lists | **lists**, ets or custom (configurable) |
 | 3 | Busy workers storage | dict (questionable) | local ETS (questionable) | **lists**, ets or custom (configurable) |
-| 4 | Waiting calls storage | queue (questionable) | queue (questionable) | **lists**, ets, queue or custom (configurable) |
+| 4 | Waiting calls storage | queue (questionable) | queue (questionable) | **lists**, ets or custom (configurable) |
 | 5 | Answer waiting calls method | erlang:send_after (slower) | on worker release cast (faster) | on worker release cast (faster) |
 | 6 | Method used to monitor consumers termination | Monitors | Monitors | Monitors |
 | 7 | Method used to monitor workers termination | Monitors | erlang:link/1 and process_flag(trap_exit, true) (highly questionable) | Monitors |

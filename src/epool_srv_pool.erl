@@ -37,6 +37,7 @@ start_link(PoolConfig = #epool_config{name = Name}) -> gen_server:start_link(Nam
 
 init(#epool_config{
     name                    = Name,
+    groups                  = Groups,
     min_size                = MinSize,
     max_size                = MaxSize,
     culling_interval        = CullingInterval,
@@ -69,6 +70,9 @@ init(#epool_config{
 
     %% Build initial state
     State = #epool_srv_pool_state{
+
+        %% Keep the name
+        name                = Name,
 
         %% Size
         %% We always start with 0 workers because workers are created later
@@ -117,6 +121,12 @@ init(#epool_config{
         stats               = #epool_stats{}
 
     },
+
+    %% Add pool to his groups if neccessary
+    ok = case erlang:is_list(Groups) of
+        true -> epool:grouping_add_pool(Groups, Name);
+        false -> ok
+    end,
 
     {ok, State, infinity}.
 
@@ -558,6 +568,7 @@ handle_cast(_Msg, State) -> {noreply, State}.
 %% Handle culling
 handle_info(cull,
             State = #epool_srv_pool_state{
+                name                    = EpoolName,
                 size                    = Size,
                 min_size                = MinSize,
                 culling_interval        = CullingInterval,
@@ -574,7 +585,7 @@ handle_info(cull,
             %% Cull the idle workers by asking the idle workers implementation to do this for us.
             %% This way idle workers implementation can optimize the iteration process as seem fit
             %% according to the storage type.
-            case IdleWorkersModule:cull(CullingInterval, CullingAge, Size, MinSize, IdleWorkers) of
+            case IdleWorkersModule:cull(EpoolName, CullingAge, Size, MinSize, IdleWorkers) of
                 none ->
 
                     %% Trigger the next cull
@@ -587,7 +598,7 @@ handle_info(cull,
 
                     {noreply, CullNoneState};
 
-                {HowManyWorkersCulled, CulledIdleWorkers} ->
+                {CulledCount, CulledIdleWorkers} ->
 
                     %% Trigger the next cull
                     %% {abs, false}
@@ -597,7 +608,7 @@ handle_info(cull,
 
                     %% Alter the state
                     CullState = State#epool_srv_pool_state{
-                        size                = Size - HowManyWorkersCulled,
+                        size                = Size - CulledCount,
                         idle_workers        = CulledIdleWorkers,
                         culling_started = true
                     },
@@ -613,7 +624,7 @@ handle_info(cull,
             %% until new worker are added and Size become bigger than MinSize
             {noreply, State#epool_srv_pool_state{culling_started = false}}
 
-        end;
+    end;
 
 %% Handle workers or caller exit
 handle_info({'DOWN', MonitorRef, process, _, _},

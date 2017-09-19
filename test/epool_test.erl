@@ -63,15 +63,8 @@
 application_test_() ->
 
     {setup,
-     fun() ->
-
-         %% Set some testing epool application environment
-         application:set_env(epool, metrics_module, fake_metrics)
-
-     end,
-     fun(_X) ->
-        ok
-     end,
+     fun() -> ok end,
+     fun(_X) -> ok end,
 
      %% foreach is used to set up a fixture and optionally tear it down afterwards,
      %% repeated for each single one of the specified test sets.
@@ -94,13 +87,13 @@ application_test_() ->
                   {min_size, 2},
                   {max_size, {0, min}},
                   {strategy, lifo},
-                  {worker_module, epool_test_srv},
+                  {worker_module, epool_test_worker_srv},
                   {worker_args, test}
               ]
           ],
 
           %% Set the testing pools into epool application environment
-          application:set_env(pooler, pools, Pools),
+          application:set_env(epool, pools, Pools),
 
           %% Start epool application for the test
           application:start(epool)
@@ -116,14 +109,11 @@ application_test_() ->
       end,
 
       %% Run all tests
-      all_tests()
+      test_all()
 
       }}.
 
-%% Test epool as a library with custom supervision
-library_test_() -> ok.
-
-all_tests() ->
+test_all() ->
 
     [
         %% Any test or test set T can be annotated with a title, by wrapping it in a pair {Title, T},
@@ -132,12 +122,18 @@ all_tests() ->
         %% instead of adding an extra tuple wrapper as in {"The Title", {...}}.
 
         {<<"Test busy workers based on ets lookup">>,
-         fun test_epool_x_busy_workers_ets_lookup/0
+         fun() ->
+
+             ok = test_epool_x_busy_workers_ets_lookup()
+
+             end
         }
 
     ].
 
 test_epool_x_busy_workers_ets_lookup() -> ok.
+
+
 
 
 

@@ -6,13 +6,18 @@
 %%% @end
 %%%-------------------------------------------------------------------
 
-%% Default configuration options when they are not provided by the caller
+%% Default configuration options when they are not provided
 
 %% For more details on supervisor restart intensity and period please consult: https://github.com/erlang/otp/pull/1289/files
--define(EPOOL_DEFAULT_SUP_NAME,                         epool_sup).
+-define(EPOOL_DEFAULT_SUP_NAME,                         {local, epool_sup}).
+-define(EPOOL_DEFAULT_SUP_REF,                          epool_sup).
 -define(EPOOL_DEFAULT_SUP_SHUTDOWN,                     5000).
 -define(EPOOL_DEFAULT_SUP_RESTART_INTENSITY,            10).
 -define(EPOOL_DEFAULT_SUP_RESTART_PERIOD,               10).
+
+-define(EPOOL_DEFAULT_SRV_GROUPING_NAME,                {local, epool_srv_grouping}).
+-define(EPOOL_DEFAULT_SRV_GROUPING_REF,                 epool_srv_grouping).
+-define(EPOOL_DEFAULT_SRV_GROUPING_SHUTDOWN,            5000).
 
 -define(EPOOL_DEFAULT_SUP_POOL_SHUTDOWN,                5000).
 -define(EPOOL_DEFAULT_SUP_POOL_RESTART_INTENSITY,       10).
@@ -35,9 +40,8 @@
 -define(EPOOL_DEFAULT_BUSY_WORKERS_MODULE,              epool_x_busy_workers_list).
 -define(EPOOL_DEFAULT_WAITING_CALLS_MODULE,             epool_x_waiting_calls_list).
 
-%% Default module used for pools grouping
-%% Modules you can chose from are: epool_x_grouping_ets, epool_x_grouping_srv or custom module
--define(EPOOL_DEFAULT_GROUPING_MODULE,                  epool_x_grouping_ets).
+%% Various ETS names
+-define(EPOOL_ETS_GROUPING_POOLS_BY_GROUP,              epool_ets_grouping_pools_by_group).
 
 %% Epool time unit type
 %% Supports original pooler time unit format and Erlang common time units.
@@ -59,14 +63,14 @@
     %% mandatory
     name                            = undefined :: epool_name(),
 
-    %% Pool group
+    %% Pool groups
     %% optional
-    %% Defaults to undefined
-    %% You can group pools by group name. If pool group name is not specified
+    %% Defaults to 'undefined'
+    %% You can group pools by group names. If no pool group name is specified
     %% the pool will not be added to any group. Epool implements both pooler and poolboy approaches.
     %% If you want to use groups, you can easily do it. If you don't, there will be no performance penalty for supporting groups
-    %% if you don't define one.
-    group                           = undefined :: atom(),
+    %% if you don't define one. You can also add a pool to multiple groups once.
+    groups                          = undefined :: [atom()],
 
     %% Pool minimal size
     %% optional
@@ -281,8 +285,19 @@
 %% Type definition for epool_status
 -type epool_status() :: #epool_status{}.
 
+%% Pools grouping server state
+-record(epool_srv_grouping_state, {
+    monitors = [] :: list()
+}).
+
+%% Type definition for pool server state
+-type epool_srv_grouping_state() :: #epool_srv_grouping_state{}.
+
 %% Pool server state
 -record(epool_srv_pool_state, {
+
+    %% Pool name
+    name                        = undefined :: epool_name(),
 
     %% Pool size
     %% Holds the number of the workers in the pool

@@ -22,6 +22,10 @@
 -export([release/2]).
 -export([transaction/2, transaction/4]).
 
+-export([grouping_add_pool/2]).
+-export([grouping_remove_pool/1, grouping_remove_pool/2]).
+-export([grouping_list_pools/1]).
+
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% pool CRUD operations
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -33,14 +37,14 @@
     Reason     	:: term().
 create(PoolConfig) ->
 
-    %% Get main supervisor name
-    MainSupName = application:get_env(epool, sup_name, ?EPOOL_DEFAULT_SUP_NAME),
+    %% Get main supervisor reference
+    MainSupRef = application:get_env(epool, sup_ref, ?EPOOL_DEFAULT_SUP_REF),
 
     %% Build pool supervisor child specifications
     ChildSpec   = epool_utils:pool_config_to_child_specs(PoolConfig),
 
     %% Starts the pool supervisor child
-    supervisor:start_child(MainSupName, ChildSpec).
+    supervisor:start_child(MainSupRef, ChildSpec).
 
 %% @doc Delete the specified pool and terminate all workers
 -spec delete(PoolName) -> ok | {error, Reason} when
@@ -48,14 +52,14 @@ create(PoolConfig) ->
     Reason     	:: term().
 delete(PoolName) ->
 
-    %% Get main supervisor name
-    MainSupName = application:get_env(epool, sup_name, ?EPOOL_DEFAULT_SUP_NAME),
+    %% Get main supervisor reference
+    MainSupRef = application:get_env(epool, sup_ref, ?EPOOL_DEFAULT_SUP_REF),
 
     %% Get the supervisor id of the specified pool
     IdSupPool   = epool_utils:id_sup_pool(PoolName),
 
     %% Tells main supervisor to terminate the pool supervisor child
-    case supervisor:terminate_child(MainSupName, IdSupPool) of
+    case supervisor:terminate_child(MainSupRef, IdSupPool) of
         ok ->
 
             %% Tells main supervisor to delete the child specification identified by Id.
@@ -63,7 +67,7 @@ delete(PoolName) ->
             %% If successful, the function returns ok. If the child specification identified by Id exists but the corresponding
             %% child process is running or is about to be restarted, the function returns {error,running} or {error,restarting}, respectively.
             %% If the child specification identified by Id does not exist, the function returns {error, not_found}.
-            supervisor:delete_child(MainSupName, IdSupPool);
+            supervisor:delete_child(MainSupRef, IdSupPool);
 
         Error -> Error
     end.
@@ -73,12 +77,12 @@ delete(PoolName) ->
     PoolName		:: epool_name().
 exists(PoolName) ->
 
-    %% Get main supervisor name
-    MainSupName = application:get_env(epool, sup_name, ?EPOOL_DEFAULT_SUP_NAME),
+    %% Get main supervisor reference
+    MainSupRef = application:get_env(epool, sup_ref, ?EPOOL_DEFAULT_SUP_REF),
 
     %% Returns a newly created list with information about all child specifications and child processes belonging to supervisor SupRef.
     %% Notice that calling this function when supervising many children under low memory conditions can cause an out of memory exception.
-    ChildSpecs  = supervisor:which_children(MainSupName),
+    ChildSpecs  = supervisor:which_children(MainSupRef),
 
     %% Get the supervisor id of the specified pool
     IdSupPool   = epool_utils:id_sup_pool(PoolName),
@@ -103,10 +107,10 @@ status(PoolName) ->
 -spec list() -> PoolsList when PoolsList :: [epool_name()].
 list() ->
 
-    %% Get main supervisor name
-    MainSupName = application:get_env(epool, sup_name, ?EPOOL_DEFAULT_SUP_NAME),
+    %% Get main supervisor reference
+    MainSupRef = application:get_env(epool, sup_ref, ?EPOOL_DEFAULT_SUP_REF),
 
-    ChildSpecs = supervisor:which_children(MainSupName),
+    ChildSpecs = supervisor:which_children(MainSupRef),
     list(ChildSpecs, []).
 
 list([[{Id, _Child, supervisor, _Modules}]|T], Acum) ->
@@ -295,7 +299,7 @@ take_from_group(GroupName) -> take_from_group(GroupName, true, inifinity).
 take_from_group(GroupName, Wait, Timeout) ->
 
     %% Get all pools into the specified group
-    Pools = ?EPOOL_DEFAULT_GROUPING_MODULE:pools_list(GroupName),
+    Pools = grouping_list_pools(GroupName),
 
     %% Take a worker from the specified list of pools
     take_from_pools(Pools, Wait, Timeout).
@@ -316,7 +320,7 @@ take_from_group(GroupName, Wait, Timeout) ->
 take_from_group(GroupName, Wait, AttemptTimeout, TotalTimeout) ->
 
     %% Get all pools into the specified group
-    Pools = ?EPOOL_DEFAULT_GROUPING_MODULE:list_pools(GroupName),
+    Pools = grouping_list_pools(GroupName),
 
     %% Take a worker from the specified list of pools
     take_from_pools(Pools, Wait, AttemptTimeout, TotalTimeout).
@@ -382,5 +386,55 @@ transaction(PoolName, Fun, Wait, Timeout) ->
         Error -> {aborted, Error}
     end.
 
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% grouping
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
+%% @doc Add the specified pool to the specified group or to a list of groups.
+-spec grouping_add_pool(GroupName, PoolName) -> ok when
+    GroupName   :: atom() | [atom()],
+    PoolName    :: epool_name().
+grouping_add_pool([], _PoolName) -> ok;
+grouping_add_pool([H|T], PoolName) when erlang:is_atom(H) ->
+    ok = grouping_add_pool(H, PoolName),
+    grouping_add_pool(T, PoolName);
+grouping_add_pool(GroupName, PoolName) when erlang:is_atom(GroupName) ->
 
+    %% Get grouping server reference
+    GroupingServerRef = application:get_env(epool, srv_grouping_ref, ?EPOOL_DEFAULT_SRV_GROUPING_REF),
+
+    %% Call the grouping server
+    gen_server:call(GroupingServerRef, {add, GroupName, PoolName}, infinity).
+
+%% @doc Remove the specified pool from all the group it was added to
+-spec grouping_remove_pool(PoolName) -> ok when
+    PoolName    :: epool_name().
+grouping_remove_pool(PoolName) ->
+
+    %% Get grouping server reference
+    GroupingServerRef = application:get_env(epool, srv_grouping_ref, ?EPOOL_DEFAULT_SRV_GROUPING_REF),
+
+    %% Call the grouping server
+    gen_server:call(GroupingServerRef, {delete, PoolName}, infinity).
+
+%% @doc Remove the specified pool from specified group
+-spec grouping_remove_pool(GroupName, PoolName) -> true when
+    GroupName   :: atom(),
+    PoolName    :: epool_name().
+grouping_remove_pool(GroupName, PoolName) ->
+
+    %% Get grouping server reference
+    GroupingServerRef = application:get_env(epool, srv_grouping_ref, ?EPOOL_DEFAULT_SRV_GROUPING_REF),
+
+    %% Call the grouping server
+    gen_server:call(GroupingServerRef, {delete, GroupName, PoolName}, infinity).
+
+%% @doc Returns a list with all pools into the specified group
+-spec grouping_list_pools(GroupName) -> [PoolName] when
+    GroupName   :: atom(),
+    PoolName    :: epool_name().
+grouping_list_pools(GroupName) ->
+
+    %% We operate directly on the grouping ETS without unnecessary calling
+    %% the grouping server.
+    ets:match(?EPOOL_ETS_GROUPING_POOLS_BY_GROUP, {GroupName, '$1'}).
