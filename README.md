@@ -5,6 +5,10 @@ Epool - Generic pooling library for Erlang
 
 Epool is a **generic** pooling library for Erlang **insanely documented** with a focus on **performance**, **extensibility** and **functionality**.
 
+## Projects using epool
+
+- ErlCash - Erlang cryptocurrency https://github.com/erlmoney/erlcash
+
 ## Quick comparison with other pooling libraries
 
 | # | | pooler | poolboy | **epool** |
